@@ -17,7 +17,8 @@ async function loadAvailableModels() {
         const response = await fetch('/api/models', {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${getAccessToken()}`
+                'Authorization': `Bearer ${getAccessToken()}`,
+                'Content-Type': 'application/json'
             }
         });
 
@@ -51,7 +52,8 @@ async function checkAuth() {
         const response = await fetch('/api/me', {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
             }
         });
         
@@ -87,7 +89,8 @@ async function loadOrCreateConversation() {
         const response = await fetch('/api/chat/conversations', {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${getAccessToken()}`
+                'Authorization': `Bearer ${getAccessToken()}`,
+                'Content-Type': 'application/json'
             }
         });
         

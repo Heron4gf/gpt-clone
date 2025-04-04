@@ -15,8 +15,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Verify token is valid (optional - can be added for extra security)
     fetch('/api/me', {
+        method: 'GET',
         headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
         }
     })
     .then(response => {

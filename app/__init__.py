@@ -1,7 +1,7 @@
 # app/__init__.py
 import os
 import logging
-from flask import Flask, render_template
+from flask import Flask, render_template, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 
@@ -41,6 +41,15 @@ def create_app(config_name='development'):
         logger.error(f"Error loading OpenAI client: {str(e)}", exc_info=True)
         logger.warning("Application will continue, but chat functionality may not work properly")
     
+    # Configure JWT error handling
+    @jwt.unauthorized_loader
+    def unauthorized_callback(callback):
+        return jsonify({"error": "Authentication required"}), 401
+
+    @jwt.invalid_token_loader
+    def invalid_token_callback(callback):
+        return jsonify({"error": "Invalid or expired token"}), 401
+    
     # Register blueprints
     logger.info("Registering blueprints")
     from app.routes.auth_routes import auth_bp
@@ -49,7 +58,9 @@ def create_app(config_name='development'):
     from app.routes.api_routes import api_bp
     from app.routes.model_routes import model_bp
     
-    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    # Register the auth routes directly under /api instead of /api/auth
+    # This ensures /api/login, /api/register, and /api/me are accessible
+    app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp, url_prefix='/api/chat')
     app.register_blueprint(user_bp, url_prefix='/api/users')
     app.register_blueprint(api_bp, url_prefix='/api')  # This will handle /api/login and /api/register
@@ -73,6 +84,15 @@ def create_app(config_name='development'):
     @app.route('/health')
     def health_check():
         return {"status": "healthy"}, 200
+    
+    # Error handlers
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({"error": "Not found"}), 404
+        
+    @app.errorhandler(500)
+    def server_error(e):
+        return jsonify({"error": "Internal server error"}), 500
     
     logger.info("Application initialization complete")
     return app
