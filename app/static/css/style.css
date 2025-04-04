@@ -241,3 +241,26 @@ body {
         padding: 10px 15px;
     }
 }
+
+/* Add this to style.css */
+.model-selection {
+    position: absolute;
+    top: -30px;
+    right: 20px;
+    z-index: 1;
+}
+
+#modelSelect {
+    background-color: var(--background-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 0.8em;
+}
+
+#modelSelect:focus {
+    outline: none;
+    border-color: var(--button-primary-bg);
+}
+

@@ -30,16 +30,24 @@
                 </div>
             </div>
 
+            <!-- Add this to index.html near the input area -->
+            <!-- Update the input area in index.html -->
             <div class="input-area">
+                <div class="model-selection">
+                    <select id="modelSelect">
+                        <!-- Will be filled dynamically -->
+                    </select>
+                </div>
                 <textarea id="userInput" placeholder="Send a message..." rows="1"></textarea>
-                <button id="sendButton" aria-label="Send Message">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
-            </div>
+                    <button id="sendButton" aria-label="Send Message">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+
              <p class="footer-text">ChatGPT Clone (Flask Version) - AI responses may be mocked.</p>
         </div>
     </div>
-
+    <script src="{{ url_for('static', filename='js/auth_check.js') }}"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

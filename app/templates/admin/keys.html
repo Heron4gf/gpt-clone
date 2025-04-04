@@ -1,0 +1,49 @@
+<!-- app/templates/admin/keys.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registration Keys - Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+    <div class="admin-container">
+        <h1>Registration Keys Management</h1>
+        
+        <div class="actions">
+            <button id="generateKeyBtn" class="btn-primary">Generate New Key</button>
+            <button id="loadKeysBtn" class="btn-secondary">Load Keys from File</button>
+        </div>
+        
+        <div class="keys-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Key</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Used By</th>
+                        <th>Used At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for key in keys %}
+                    <tr class="{{ 'used' if key.is_used else '' }}">
+                        <td>{{ key.id }}</td>
+                        <td>{{ key.key_value }}</td>
+                        <td>{{ 'Used' if key.is_used else 'Available' }}</td>
+                        <td>{{ key.created_at }}</td>
+                        <td>{{ key.used_by or '' }}</td>
+                        <td>{{ key.used_at or '' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+</body>
+</html>

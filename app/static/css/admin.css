@@ -1,0 +1,121 @@
+/* app/static/css/admin.css */
+:root {
+    --background-primary: #343541;
+    --background-secondary: #40414F;
+    --background-tertiary: #202123;
+    --text-primary: #FFFFFF;
+    --text-secondary: #ECECF1;
+    --border-color: rgba(255, 255, 255, 0.2);
+    --button-primary-bg: #10A37F; /* Teal accent */
+    --button-secondary-bg: #2A2B32;
+    --success-color: #34D399;
+    --error-color: #FF5555;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--background-primary);
+    color: var(--text-primary);
+    padding: 20px;
+}
+
+.admin-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+h1 {
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.actions {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 30px;
+}
+
+.btn-primary, .btn-secondary {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.btn-primary {
+    background-color: var(--button-primary-bg);
+    color: white;
+}
+
+.btn-secondary {
+    background-color: var(--button-secondary-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.btn-primary:hover {
+    background-color: #0D8C6D;
+}
+
+.btn-secondary:hover {
+    background-color: #33343C;
+}
+
+.keys-table {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    background-color: var(--background-secondary);
+    border-radius: 5px;
+}
+
+th, td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+th {
+    background-color: var(--background-tertiary);
+    color: var(--text-secondary); 
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr.used {
+    opacity: 0.7;
+}
+
+tr:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.message {
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+    text-align: center;
+}
+
+.success {
+    background-color: rgba(52, 211, 153, 0.2);
+    color: var(--success-color);
+}
+
+.error {
+    background-color: rgba(255, 85, 85, 0.2);
+    color: var(--error-color);
+}

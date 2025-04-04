@@ -29,7 +29,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial setup
     toggleSendButton();
 
-
     // --- Functions ---
 
     function appendMessage(sender, messageContent) {
@@ -75,54 +74,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function sendMessage() {
         const messageText = userInput.value.trim();
-        if (!messageText) return; // Don't send empty messages
-
-        // 1. Display user's message immediately
-        appendMessage('user', messageText);
-
-        // 2. Clear input and disable send button
-        userInput.value = '';
-        autoResizeTextarea(userInput); // Reset height
-        toggleSendButton(true); // Disable button
-
-        // 3. Show typing indicator
-        showTypingIndicator();
-
+        if (!messageText) return;
+    
+        // Get the selected model
+        const modelSelect = document.getElementById('modelSelect');
+        const selectedModel = modelSelect.value;
+    
+        // Display user's message...
+        
         try {
-            // 4. Send message to backend API
-            const response = await fetch('/api/chat', {
+            // Send message to backend API with model selection
+            const response = await fetch(`/api/chat/conversations/${currentConversationId}/messages`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${getAccessToken()}`
                 },
-                body: JSON.stringify({ message: messageText }),
+                body: JSON.stringify({ 
+                    content: messageText,
+                    model: selectedModel
+                }),
             });
-
-            // 5. Hide typing indicator
-            hideTypingIndicator();
-
-            if (!response.ok) {
-                // Handle HTTP errors (e.g., 400, 500)
-                const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
-                console.error('API Error:', response.status, errorData);
-                appendMessage('bot', `Sorry, something went wrong. ${errorData.error || 'Please try again.'}`);
-            } else {
-                // 6. Get response and display bot message
-                const data = await response.json();
-                appendMessage('bot', data.response);
-            }
-
-        } catch (error) {
-            // Handle network errors or fetch API failures
-            hideTypingIndicator();
-            console.error('Network or fetch error:', error);
-            appendMessage('bot', 'Sorry, I couldn\'t connect to the server. Please check your connection.');
-        } finally {
-            // 7. Re-enable input/button
-             toggleSendButton(false); // Enable button (or keep disabled if input is empty)
-             userInput.focus(); // Keep focus on input
+            
+            // Handle response...
+        }
+        catch (error) {
+            // Error handling...
         }
     }
+    
 
     function scrollToBottom() {
         chatbox.scrollTop = chatbox.scrollHeight;
@@ -252,3 +232,48 @@ function getAuthToken() {
     // For example:
     return localStorage.getItem('access_token');
 }
+
+// app/static/js/script.js (update the model selection part)
+
+// Add a function to load available models
+async function loadAvailableModels() {
+    try {
+        const response = await fetch('/api/models', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${getAccessToken()}`
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const modelSelect = document.getElementById('modelSelect');
+            
+            // Clear existing options
+            modelSelect.innerHTML = '';
+            
+            // Add options for each model
+            data.models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = model.display_name;
+                modelSelect.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading models:', error);
+    }
+}
+
+// Add this to your initialization code
+document.addEventListener('DOMContentLoaded', () => {
+    // Existing initialization code...
+    
+    // Load available models
+    loadAvailableModels();
+    
+    // Check if the user is logged in
+    if (!getAccessToken()) {
+        window.location.href = '/login';
+    }
+});

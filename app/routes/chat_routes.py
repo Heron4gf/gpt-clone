@@ -89,6 +89,7 @@ def send_message(conversation_id):
     user_id = get_jwt_identity()
     data = request.get_json()
     content = data.get('content')
+    model = data.get('model', 'openai/gpt-4o-mini')  # Default to gpt-4o-mini if not specified
     
     if not content:
         return jsonify({"error": "Message content is required"}), 400
@@ -102,8 +103,8 @@ def send_message(conversation_id):
     user_message = Message.create(conversation_id, 'user', content)
     
     try:
-        # Generate response using chat service
-        ai_content = generate_response(conversation_id, content)
+        # Generate response using chat service with specified model
+        ai_content = generate_response(conversation_id, content, model)
         
         # Save AI response
         ai_message = Message.create(conversation_id, 'assistant', ai_content)

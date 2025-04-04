@@ -9,29 +9,30 @@ import logging
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.tools.shell_tool import execute_shell_command
+from app.config.models import get_model_config, DEFAULT_MODEL
 from load_client import load_client, isClientLoaded, get_client
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-def get_agent():
-    """Get or create an agent with the shell tool."""
+def get_agent(model_name=DEFAULT_MODEL):
+    """Get or create an agent with the shell tool using configuration from models.py"""
     if not isClientLoaded():
         load_client()
-        
+    
+    # Get model configuration
+    model_config = get_model_config(model_name)
+    
     # Create a general assistant agent with shell capabilities
     agent = Agent(
         name="ChatGPT Assistant",
-        instructions="""You are a helpful, creative, and knowledgeable assistant. 
-        Answer user questions thoroughly and accurately. When appropriate, use the shell tool
-        to help with tasks that require computation, information lookup, or system operations.
-        Always prioritize user safety and data security in your responses.""",
+        instructions=model_config["instructions"],
         tools=[execute_shell_command],
-        model="openai/gpt-3.5-turbo"
+        model=model_name
     )
     return agent
 
-async def generate_response_async(conversation_id: int, user_message: str) -> str:
+async def generate_response_async(conversation_id: int, user_message: str, model=DEFAULT_MODEL) -> str:
     """Generate a response using the Agents SDK."""
     try:
         # Fetch conversation history
@@ -48,8 +49,8 @@ async def generate_response_async(conversation_id: int, user_message: str) -> st
         # Add the new user message to history
         message_history.append({"role": "user", "content": user_message})
         
-        # Get the agent
-        agent = get_agent()
+        # Get the agent with specified model
+        agent = get_agent(model)
         
         # Run the agent with the history
         result = await Runner.run(
@@ -65,6 +66,6 @@ async def generate_response_async(conversation_id: int, user_message: str) -> st
         logger.error(f"Error generating response: {str(e)}", exc_info=True)
         return f"I'm sorry, I encountered an error while processing your request: {str(e)}"
 
-def generate_response(conversation_id: int, user_message: str) -> str:
+def generate_response(conversation_id: int, user_message: str, model=DEFAULT_MODEL) -> str:
     """Synchronous wrapper for the async response generator."""
-    return asyncio.run(generate_response_async(conversation_id, user_message))
+    return asyncio.run(generate_response_async(conversation_id, user_message, model))

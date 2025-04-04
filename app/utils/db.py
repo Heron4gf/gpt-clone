@@ -22,23 +22,37 @@ def close_db(e=None):
     if db is not None:
         db.close()
 
+# app/utils/db.py (update init_db function)
+
 def init_db():
     """Initialize the database tables."""
     db = get_db()
     
-    # Create users table
+    # Create users table (without email)
     db.execute('''
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
-        email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
     
-    # Create conversations table
+    # Create registration keys table
+    db.execute('''
+    CREATE TABLE IF NOT EXISTS registration_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key_value TEXT UNIQUE NOT NULL,
+        is_used BOOLEAN DEFAULT 0,
+        used_by INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        used_at TIMESTAMP,
+        FOREIGN KEY (used_by) REFERENCES users (id)
+    )
+    ''')
+    
+    # Create conversations table (unchanged)
     db.execute('''
     CREATE TABLE IF NOT EXISTS conversations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +64,7 @@ def init_db():
     )
     ''')
     
-    # Create messages table
+    # Create messages table (unchanged)
     db.execute('''
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +77,7 @@ def init_db():
     ''')
     
     db.commit()
+
 
 def init_app(app):
     """Register database functions with the Flask app."""
