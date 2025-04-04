@@ -20,15 +20,29 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     })
     .then(response => {
-        if (response.status === 401) {
-            // Token invalid, redirect to login
+        // Handle any error status as a need to re-login
+        if (!response.ok) {
+            console.log('Authentication check failed, redirecting to login');
             localStorage.removeItem('access_token');
             localStorage.removeItem('refresh_token');
             localStorage.removeItem('user');
             window.location.href = '/login';
+            return;
+        }
+        
+        return response.json();
+    })
+    .then(data => {
+        if (data && data.user) {
+            console.log('User authenticated:', data.user.username);
         }
     })
     .catch(err => {
         console.error('Auth check error:', err);
+        // Redirect to login on any error
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
     });
 });

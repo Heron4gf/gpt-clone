@@ -36,3 +36,16 @@ def update_profile():
         "message": "Profile updated successfully",
         "user": user.to_dict()
     }), 200
+
+@user_bp.route('/me', methods=['GET'])
+@jwt_required()
+def get_current_user():
+    user_id = get_jwt_identity()
+    user = User.get_by_id(user_id)
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    return jsonify({
+        "user": user.to_dict()
+    }), 200

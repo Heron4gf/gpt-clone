@@ -1,10 +1,14 @@
 # app/__init__.py
 import os
+import logging
 from flask import Flask, render_template
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 
+logger = logging.getLogger(__name__)
+
 def create_app(config_name='development'):
+    logger.info(f"Creating app with config: {config_name}")
     app = Flask(__name__, 
                 template_folder='templates',
                 static_folder='static')
@@ -20,24 +24,36 @@ def create_app(config_name='development'):
     # Initialize database
     from app.utils.db import init_db, init_app as init_db_app
     with app.app_context():
+        logger.info("Initializing database")
         init_db()
     init_db_app(app)  # Register database teardown
     
     # Initialize OpenAI client
-    from load_client import load_client, isClientLoaded
-    if not isClientLoaded():
-        load_client()
+    try:
+        logger.info("Loading OpenAI client")
+        from load_client import load_client, isClientLoaded
+        if not isClientLoaded():
+            client = load_client()
+            logger.info(f"OpenAI client loaded: {client is not None}")
+        else:
+            logger.info("OpenAI client already loaded")
+    except Exception as e:
+        logger.error(f"Error loading OpenAI client: {str(e)}", exc_info=True)
+        logger.warning("Application will continue, but chat functionality may not work properly")
     
     # Register blueprints
+    logger.info("Registering blueprints")
     from app.routes.auth_routes import auth_bp
     from app.routes.chat_routes import chat_bp
     from app.routes.user_routes import user_bp
     from app.routes.api_routes import api_bp
+    from app.routes.model_routes import model_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(chat_bp, url_prefix='/api/chat')
     app.register_blueprint(user_bp, url_prefix='/api/users')
     app.register_blueprint(api_bp, url_prefix='/api')  # This will handle /api/login and /api/register
+    app.register_blueprint(model_bp, url_prefix='/api')  # This will properly handle /api/models
     
     # Serve frontend at root route
     @app.route('/')
@@ -58,4 +74,5 @@ def create_app(config_name='development'):
     def health_check():
         return {"status": "healthy"}, 200
     
+    logger.info("Application initialization complete")
     return app

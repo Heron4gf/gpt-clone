@@ -12,9 +12,13 @@ chat_bp = Blueprint('chat', __name__)
 logger = logging.getLogger(__name__)
 
 @chat_bp.route('/conversations', methods=['GET'])
-@jwt_required()
+@jwt_required(optional=True)
 def get_conversations():
     user_id = get_jwt_identity()
+    
+    if user_id is None:
+        return jsonify({"error": "Authentication required", "conversations": []}), 200
+        
     conversations = Conversation.get_by_user_id(user_id)
     
     return jsonify({
@@ -22,9 +26,13 @@ def get_conversations():
     }), 200
 
 @chat_bp.route('/conversations', methods=['POST'])
-@jwt_required()
+@jwt_required(optional=True)
 def create_conversation():
     user_id = get_jwt_identity()
+    
+    if user_id is None:
+        return jsonify({"error": "Authentication required"}), 401
+        
     data = request.get_json()
     title = data.get('title', 'New Conversation')
     
@@ -88,26 +96,39 @@ def delete_conversation(conversation_id):
 def send_message(conversation_id):
     user_id = get_jwt_identity()
     data = request.get_json()
+    logger.info(f"[DEBUG] Received message request: user_id={user_id}, conversation_id={conversation_id}, data={data}")
+    
     content = data.get('content')
     model = data.get('model', 'openai/gpt-4o-mini')  # Default to gpt-4o-mini if not specified
     
     if not content:
+        logger.warning(f"[DEBUG] Message content is missing in request data: {data}")
         return jsonify({"error": "Message content is required"}), 400
     
+    logger.info(f"[DEBUG] Processing message with model: {model}")
+    
     conversation = Conversation.get_by_id(conversation_id)
+    logger.info(f"[DEBUG] Retrieved conversation: {conversation}")
     
     if not conversation or conversation.user_id != user_id:
+        logger.warning(f"[DEBUG] Conversation not found or unauthorized: conv={conversation}, user_id={user_id}")
         return jsonify({"error": "Conversation not found or unauthorized"}), 404
     
     # Save user message
+    logger.info(f"[DEBUG] Creating user message: conversation_id={conversation_id}, content={content[:50]}...")
     user_message = Message.create(conversation_id, 'user', content)
+    logger.info(f"[DEBUG] User message created: {user_message}")
     
     try:
         # Generate response using chat service with specified model
+        logger.info(f"[DEBUG] Calling generate_response with model: {model}")
         ai_content = generate_response(conversation_id, content, model)
+        logger.info(f"[DEBUG] Response generated, length: {len(ai_content)}")
         
         # Save AI response
+        logger.info(f"[DEBUG] Creating assistant message")
         ai_message = Message.create(conversation_id, 'assistant', ai_content)
+        logger.info(f"[DEBUG] Assistant message created: {ai_message}")
         
         # Update conversation with updated messages
         updated_conversation = Conversation.get_by_id(conversation_id)
@@ -117,7 +138,7 @@ def send_message(conversation_id):
         }), 200
         
     except Exception as e:
-        logger.error(f"Error in send_message: {str(e)}", exc_info=True)
+        logger.error(f"[DEBUG] Error in send_message: {str(e)}", exc_info=True)
         return jsonify({"error": f"Failed to generate response: {str(e)}"}), 500
 
 @chat_bp.route('/conversations/<int:conversation_id>/stream', methods=['POST'])

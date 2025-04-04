@@ -1,6 +1,6 @@
 # app/routes/api_routes.py
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import create_access_token, create_refresh_token
+from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 from app.models.user import User
 from app.models.registration_key import RegistrationKey
 
@@ -69,3 +69,17 @@ def register():
         "access_token": access_token,
         "refresh_token": refresh_token
     }), 201
+
+@api_bp.route('/me', methods=['GET'])
+@jwt_required()
+def get_current_user():
+    """Get information about the currently authenticated user."""
+    user_id = get_jwt_identity()
+    user = User.get_by_id(user_id)
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    return jsonify({
+        "user": user.to_dict()
+    }), 200
