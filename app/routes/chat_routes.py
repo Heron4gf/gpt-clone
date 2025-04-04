@@ -1,26 +1,28 @@
 # app/routes/chat_routes.py
-from flask import Blueprint, request, jsonify, Response # Removed stream_with_context, current_app
+from flask import (
+    Blueprint, request, jsonify, Response, current_app # Added current_app
+)
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import logging
 import json
 import asyncio
-import queue      # <-- Import queue
-import threading  # <-- Import threading
+import queue      # For thread communication
+import threading  # For running async task in background
 
 # Assuming DEFAULT_MODEL is defined correctly in this config path
 from app.config.models import DEFAULT_MODEL
 
 from app.models.conversation import Conversation
 from app.models.message import Message
-# Import the NON-streaming function and the MODIFIED streaming function (now prefixed with _)
-from app.services.chat_service import generate_response, _stream_response_async_to_queue # Use the queue version
+# Import the NON-streaming function and the QUEUE-based streaming function
+from app.services.chat_service import generate_response, _stream_response_async_to_queue
 
 chat_bp = Blueprint('chat', __name__)
 logger = logging.getLogger(__name__)
 
 
-# --- HELPER TO RUN ASYNC IN THREAD (Should be defined once, e.g., here or in utils.py) ---
-def run_async_in_thread(target_async_func, *args):
+# --- HELPER TO RUN ASYNC IN THREAD (Modified to accept app_instance) ---
+def run_async_in_thread(target_async_func, app_instance, *args): # Added app_instance parameter
     """Helper to run an async function within its own event loop in a separate thread."""
     logger.info(f"[HELPER_THREAD] Starting new thread for {target_async_func.__name__}")
     def thread_target():
@@ -29,14 +31,26 @@ def run_async_in_thread(target_async_func, *args):
         asyncio.set_event_loop(loop)
         logger.info(f"[HELPER_THREAD] Thread {threading.current_thread().name} started with new event loop.")
         try:
-            # Run the passed async function until it completes
-            loop.run_until_complete(target_async_func(*args))
+            # Pass app_instance as the first argument to the target async function
+            # Ensure the target function (_stream_response_async_to_queue) expects app_instance first
+            loop.run_until_complete(target_async_func(app_instance, *args))
             logger.info(f"[HELPER_THREAD] Thread {threading.current_thread().name} async task completed.")
         except Exception as e:
              logger.error(f"[HELPER_THREAD] Exception in thread {threading.current_thread().name}: {e}", exc_info=True)
         finally:
             logger.info(f"[HELPER_THREAD] Thread {threading.current_thread().name} closing event loop.")
-            loop.close()
+            try:
+                # Ensure loop cleanup happens correctly
+                if loop.is_running():
+                     loop.stop()
+                if not loop.is_closed():
+                     loop.close()
+                     logger.info(f"[HELPER_THREAD] Event loop closed.")
+                else:
+                     logger.info(f"[HELPER_THREAD] Event loop was already closed.")
+            except Exception as close_err:
+                 logger.error(f"[HELPER_THREAD] Error during loop close: {close_err}")
+
             logger.info(f"[HELPER_THREAD] Thread {threading.current_thread().name} finished.")
 
     # Create and start the daemon thread
@@ -45,13 +59,13 @@ def run_async_in_thread(target_async_func, *args):
     return thread
 
 
-# --- Keep existing routes (GET /conversations, POST /conversations, GET/PUT/DELETE /conversations/<id>) ---
-# (Ensure they use int(user_id_str) for comparisons/DB calls)
+# --- Standard CRUD and Non-Streaming Routes (Keep as before, ensuring int(user_id_str)) ---
+
 @chat_bp.route('/conversations', methods=['GET'])
 @jwt_required(optional=True)
 def get_conversations():
     user_id_str = get_jwt_identity()
-    if user_id_str is None: return jsonify({"error": "Authentication required", "conversations": []}), 401 # Changed to 401
+    if user_id_str is None: return jsonify({"error": "Authentication required", "conversations": []}), 401
     try:
         user_id_int = int(user_id_str)
         conversations = Conversation.get_by_user_id(user_id_int)
@@ -118,7 +132,6 @@ def delete_conversation(conversation_id):
     except ValueError: logger.error(f"[DELETE /conv/{conversation_id}] Invalid JWT ID: {user_id_str}"); return jsonify({"error": "Invalid ID"}), 401
     except Exception as e: logger.error(f"[DELETE /conv/{conversation_id}] Error: {e}", exc_info=True); return jsonify({"error": "Failed delete"}), 500
 
-# --- EXISTING NON-STREAMING Message Route (No changes needed) ---
 @chat_bp.route('/conversations/<int:conversation_id>/messages', methods=['POST'])
 @jwt_required()
 def send_message(conversation_id):
@@ -156,6 +169,10 @@ def stream_message(conversation_id):
     data = request.get_json()
     content = data.get('content')
     model = data.get('model', DEFAULT_MODEL)
+    # --- Get app instance HERE in the main thread ---
+    # Necessary to pass the application context to the background thread
+    app_instance = current_app._get_current_object()
+    # -------------------------------------------------
     logger.info(f"[ROUTE_STREAM_Q] START: user={user_id_str}, conv={conversation_id}, model={model}")
 
     if not content:
@@ -176,6 +193,7 @@ def stream_message(conversation_id):
     # --- End Auth Check ---
 
     # --- Save User Message ---
+    # Saving before starting stream ensures history is correct for the AI call
     logger.info(f"[ROUTE_STREAM_Q] Saving user message...")
     try:
         user_message = Message.create(conversation_id, 'user', content)
@@ -197,10 +215,11 @@ def stream_message(conversation_id):
         try:
             # Start the async service function in the background thread
             logger.info("[ROUTE_STREAM_Q] Starting background thread for service...")
-            # Pass necessary args for the service func + the queue
+            # Pass the actual app instance to the helper, followed by other args
             run_async_in_thread(
                 _stream_response_async_to_queue, # Target async func in service
-                conversation_id,                 # Args for target...
+                app_instance,                    # The app instance for context
+                conversation_id,                 # Original args for target...
                 content,
                 model,
                 result_queue                     # The queue
@@ -210,7 +229,7 @@ def stream_message(conversation_id):
             # Loop, getting items from the queue (blocks)
             while True:
                 item = result_queue.get() # Wait for an item from the background thread
-                # logger.debug(f"[ROUTE_STREAM_Q] Queue reader got item: {item!r}") # Very verbose
+                # logger.debug(f"[ROUTE_STREAM_Q] Queue reader got item: {item!r}")
 
                 # Check for the None sentinel to stop
                 if item is None:
@@ -219,7 +238,7 @@ def stream_message(conversation_id):
 
                 # Yield the item (which is already an SSE formatted string from the service)
                 items_yielded += 1
-                logger.debug(f"[ROUTE_STREAM_Q] Yielding item #{items_yielded}")
+                # logger.debug(f"[ROUTE_STREAM_Q] Yielding item #{items_yielded}")
                 yield item # This yield goes to the Flask Response
 
             logger.info(f"[ROUTE_STREAM_Q] queue_reader_generator finished after yielding {items_yielded} items.")
@@ -233,7 +252,6 @@ def stream_message(conversation_id):
             except: pass # Ignore errors during error yield
         finally:
              logger.info("[ROUTE_STREAM_Q] queue_reader_generator finally block.")
-             # No need to mark task done for simple Queue get loop like this
 
     # Return the Response object, passing the SYNCHRONOUS generator directly
     logger.info("[ROUTE_STREAM_Q] Returning Response with sync queue reader generator.")

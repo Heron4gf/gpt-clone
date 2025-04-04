@@ -9,15 +9,16 @@ from typing import Dict, List, Any, AsyncGenerator
 # Ensure correct types for hints if desired
 from agents import Agent, Runner, OpenAIChatCompletionsModel, RunResultStreaming, StreamEvent
 
+# REMOVE flask import if not needed elsewhere after change
+# from flask import current_app
 import logging
 import traceback
 import json
-import queue      # <-- Import queue
-import threading  # <-- Import threading (used by helper in routes)
+import queue      # For type hinting the queue parameter
+# import threading # Not needed in this file
 
 from app.models.conversation import Conversation
 from app.models.message import Message
-from app.tools.shell_tool import execute_shell_command # Keep if used by get_agent
 from app.config.models import get_model_config, DEFAULT_MODEL
 from load_client import load_client, isClientLoaded, get_client
 
@@ -49,8 +50,9 @@ def get_agent(model_name=DEFAULT_MODEL):
 
     # Create a general assistant agent with shell capabilities
     try:
+        # Ensure OpenAIChatCompletionsModel is imported if used here
         agent = Agent(
-            name="ChatGPT Assistant",
+            name="Assistant",
             instructions=model_config["instructions"],
             model=OpenAIChatCompletionsModel(
                 model=model_name,
@@ -112,45 +114,32 @@ async def generate_response_async(conversation_id: int, user_message: str, model
         logger.info(f"[SERVICE_NONSTREAM] END: conv={conversation_id}, model={model}")
 
 
-# Import specific types mentioned in docs if needed at top of file
-# from openai.types.responses import ResponseTextDeltaEvent
-# Import necessary components from the agents library if needed for hints
-# from agents import RunResultStreaming, StreamEvent
-import logging
-import json
-import queue
-import traceback
-from app.models.message import Message # Assuming Message model import is correct
-
-logger = logging.getLogger(__name__)
-
-# Assume get_agent is defined elsewhere in the file
-# Assume RunResultStreaming and ResponseTextDeltaEvent are globally available or imported
-
-# --- MODIFIED STREAMING FUNCTION (puts to queue) ---
-async def _stream_response_async_to_queue(conversation_id: int, user_message: str, model: str, result_queue: queue.Queue):
+# --- MODIFIED STREAMING FUNCTION (Accepts app_instance, puts to queue) ---
+# Renamed with leading underscore convention for internal use by threaded helper
+async def _stream_response_async_to_queue(app_instance, conversation_id: int, user_message: str, model: str, result_queue: queue.Queue): # Added app_instance parameter FIRST
     """
     Generate response using Agents SDK, stream SSE formatted chunks into a queue.
-    Designed to be run in a background thread.
+    Handles application context (passed in) for database operations.
     """
     logger.info(f"[SERVICE_STREAM_QUEUE] START: conv={conversation_id}, model={model}")
     full_ai_response = ""
     event_count = 0
     put_chunks_count = 0
-    stream_task_completed_normally = False # Flag to track normal completion
-    try:
-        # Prepare input (only current message needed based on Runner.run_streamed usage)
-        current_input = user_message
-        logger.info(f"[SERVICE_STREAM_QUEUE] Prepared current input.")
+    stream_task_completed_normally = False
+    # REMOVED: app_instance = current_app._get_current_object() # Cannot get context here
 
-        # Get the agent
+    try:
+        # Prepare input
+        current_input = user_message
+        # IMPORTANT: If get_agent needs app_context, it must be called within a context block here too!
+        # This might mean wrapping the agent = get_agent(model) call below in app_instance.app_context()
+        # if get_agent relies on current_app internally. For now, assuming it doesn't.
         logger.info(f"[SERVICE_STREAM_QUEUE] Getting agent for model: {model}")
         agent = get_agent(model) # Ensure get_agent is defined correctly above
 
         # Use Runner.run_streamed()
         logger.info(f"[SERVICE_STREAM_QUEUE] Calling Runner.run_streamed...")
-        # Add history here if needed: chat_history=[...]
-        # Ensure agents library is imported correctly (from agents import Runner, RunResultStreaming)
+        # Add history here if needed by your agent: chat_history=[...]
         stream_result: RunResultStreaming = Runner.run_streamed(
             agent,
             input=current_input
@@ -159,40 +148,30 @@ async def _stream_response_async_to_queue(conversation_id: int, user_message: st
 
         # Iterate through the stream events
         logger.info(f"[SERVICE_STREAM_QUEUE] Iterating stream events...")
-        # Ensure agents library is imported correctly (from agents import StreamEvent)
-        # Ensure ResponseTextDeltaEvent is imported (from openai.types.responses import ResponseTextDeltaEvent)
         async for event in stream_result.stream_events():
             event_count += 1
-            # Log basic event type first, then conditionally log data safely
+            # (Keep detailed logging from previous version if desired)
             logger.debug(f"[SERVICE_STREAM_QUEUE] Event #{event_count}: Type={event.type}")
-            if hasattr(event, 'data'):
-                 logger.debug(f"[SERVICE_STREAM_QUEUE]   Data Type={type(event.data)}")
-            # else: # Optional log if data attribute missing
-            #      logger.debug("[SERVICE_STREAM_QUEUE]   Event has no 'data' attribute.")
 
             sse_data_payload = None
             delta_content = None
 
-            # Check specifically for the raw text delta event based on docs
-            if event.type == "raw_response_event":
-                 # Check if data exists and has 'delta' attribute (safer check)
-                 if hasattr(event, 'data') and hasattr(event.data, 'delta'):
-                     # Attempt to access content within delta, default to None if not present
-                     delta_content = getattr(event.data.delta, 'content', None)
-                     if delta_content: # Only process if there's actual text content
+            # --- Corrected Extraction Logic ---
+            if event.type == "raw_response_event" and hasattr(event, 'data'):
+                if hasattr(event.data, 'delta'):
+                    delta_content = event.data.delta
+                    if delta_content:
+                         delta_content = str(delta_content)
                          put_chunks_count += 1
-                         full_ai_response += delta_content # Accumulate full response
+                         full_ai_response += delta_content
                          sse_data_payload = {"chunk": delta_content}
-                     # else: logger.debug("[SERVICE_STREAM_QUEUE] Delta event had no content.")
-                 # else: logger.debug("[SERVICE_STREAM_QUEUE] Raw response event data has no 'delta'.")
 
-            # Put data into queue only if we have a payload (i.e., a text chunk)
+            # Put data into queue only if we extracted a chunk
             if sse_data_payload:
                 sse_string = f"data: {json.dumps(sse_data_payload)}\n\n"
                 logger.debug(f"[SERVICE_STREAM_QUEUE] Putting chunk #{put_chunks_count} into queue.")
                 result_queue.put(sse_string)
-            # else: # Log other events if desired
-            #     logger.debug(f"[SERVICE_STREAM_QUEUE] No SSE payload generated for event type {event.type}")
+            # else: logger.debug(f"[SERVICE_STREAM_QUEUE] No SSE payload generated for event type {event.type}")
 
         # If the loop completes without errors
         stream_task_completed_normally = True
@@ -210,25 +189,32 @@ async def _stream_response_async_to_queue(conversation_id: int, user_message: st
         logger.info(f"[SERVICE_STREAM_QUEUE] Finally block. Full response length: {len(full_ai_response)}")
         # Save the accumulated AI response *only if* the stream completed normally and we got content
         if stream_task_completed_normally and full_ai_response:
-             try:
-                  logger.info(f"[SERVICE_STREAM_QUEUE] Saving full AI response ({len(full_ai_response)} chars) to DB...")
-                  # Ensure Message.create is thread-safe or handles DB session correctly
-                  ai_message = Message.create(conversation_id, 'assistant', full_ai_response)
-                  if not ai_message: raise Exception("AI Message creation returned None")
-                  logger.info(f"[SERVICE_STREAM_QUEUE] Full AI response saved: id={ai_message.id}")
-             except Exception as db_save_err:
-                  logger.error(f"[SERVICE_STREAM_QUEUE] Failed to save full AI response: {db_save_err}", exc_info=True)
-                  err_save_sse = f'data: {json.dumps({"error": f"Failed to save full response: {db_save_err!s}"})}\n\n'
-                  result_queue.put(err_save_sse) # Send DB save error back if desired
-        elif stream_task_completed_normally: # Completed normally but no content
-             logger.warning("[SERVICE_STREAM_QUEUE] Stream completed normally but no AI response content generated/accumulated to save.")
-        else: # An exception occurred during streaming
-             logger.warning("[SERVICE_STREAM_QUEUE] Stream did not complete normally, skipping DB save for potentially incomplete response.")
+             # --- Use the passed app_instance to create context ---
+             with app_instance.app_context():
+                  logger.info(f"[SERVICE_STREAM_QUEUE] App context pushed for DB save.")
+                  try:
+                      logger.info(f"[SERVICE_STREAM_QUEUE] Saving full AI response ({len(full_ai_response)} chars) to DB...")
+                      # Ensure Message.create is defined and works within context
+                      ai_message = Message.create(conversation_id, 'assistant', full_ai_response)
+                      if not ai_message: raise Exception("AI Message creation returned None")
+                      logger.info(f"[SERVICE_STREAM_QUEUE] Full AI response saved: id={ai_message.id}")
+                  except Exception as db_save_err:
+                      logger.error(f"[SERVICE_STREAM_QUEUE] Failed to save full AI response (within context): {db_save_err}", exc_info=True)
+                      # Put DB save error into queue AFTER trying to save
+                      err_save_sse = f'data: {json.dumps({"error": f"Failed to save full response: {db_save_err!s}"})}\n\n'
+                      result_queue.put(err_save_sse)
+             # --- Context is automatically popped when 'with' block exits ---
+             logger.info(f"[SERVICE_STREAM_QUEUE] App context popped after DB save attempt.")
+        elif stream_task_completed_normally:
+             logger.warning("[SERVICE_STREAM_QUEUE] Stream completed normally but no AI response content generated/accumulated.")
+        else:
+             logger.warning("[SERVICE_STREAM_QUEUE] Stream did not complete normally, skipping DB save.")
 
         # Signal the end of generation by putting None in the queue
         logger.info("[SERVICE_STREAM_QUEUE] Putting None sentinel into queue.")
         result_queue.put(None)
         logger.info("[SERVICE_STREAM_QUEUE] END")
+
 
 # --- EXISTING generate_response (sync wrapper for non-streaming) function (No changes needed) ---
 def generate_response(conversation_id: int, user_message: str, model=DEFAULT_MODEL) -> str:
