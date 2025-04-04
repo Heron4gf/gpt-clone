@@ -1,0 +1,45 @@
+<!-- app/templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"> <!-- Optional: For icons -->
+</head>
+<body>
+    <div class="chat-container">
+        <!-- Optional Sidebar -->
+        <div class="sidebar">
+            <button class="new-chat-button">+ New Chat</button>
+            <!-- History items could go here -->
+            <div class="sidebar-footer">
+                <!-- User profile, settings etc. -->
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="main-chat">
+            <div class="chatbox" id="chatbox">
+                <!-- Messages will be appended here -->
+                 <div class="message bot-message">
+                    <div class="message-content">
+                        <p>Hello! How can I help you today?</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <textarea id="userInput" placeholder="Send a message..." rows="1"></textarea>
+                <button id="sendButton" aria-label="Send Message">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+             <p class="footer-text">ChatGPT Clone (Flask Version) - AI responses may be mocked.</p>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

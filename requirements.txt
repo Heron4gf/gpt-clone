@@ -1,0 +1,10 @@
+# requirements.txt
+Flask==2.3.2
+Flask-Cors==4.0.0
+Flask-JWT-Extended==4.5.2
+python-dotenv==1.0.0
+openai>=1.66.0
+openai-agents
+gunicorn==21.2.0
+pytest==7.3.1
+Werkzeug==2.3.4
