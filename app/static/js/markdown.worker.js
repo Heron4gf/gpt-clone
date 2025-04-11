@@ -1,56 +1,89 @@
 // static/js/markdown.worker.js
+console.log("Worker: Script starting execution...");
 
-// Import the 'marked' library using the path Flask will serve it from.
-// Flask serves the 'static' folder at the root URL path '/static'.
+let markedLoaded = false;
+
 try {
-    // IMPORTANT: Use the correct path relative to your Flask server's root!
-    importScripts('/static/js/marked.min.js');
+    // *** This path must match where Flask serves the file ***
+    // It's relative to the server root, NOT the worker file itself.
+    const libraryPath = '/static/js/marked.min.js';
+    console.log(`Worker: Attempting to importScripts from ${libraryPath}`);
+    importScripts(libraryPath);
+
+    // Verify that the 'marked' object is now available
+    if (typeof marked === 'function' || typeof marked === 'object') {
+        console.log("Worker: Successfully imported and verified 'marked' library.");
+        markedLoaded = true;
+        // Configure marked globally within the worker (optional)
+        marked.setOptions({
+            gfm: true,       // Enable GitHub Flavored Markdown (tables, strikethrough, etc.)
+            breaks: true,    // Convert single line breaks in paragraphs to <br>
+            // Consider security: If markdown comes from untrusted sources,
+            // sanitize the HTML on the MAIN thread after receiving it using DOMPurify.
+            // Do NOT rely solely on marked's basic/deprecated sanitize options.
+            // sanitize: false, // Deprecated and potentially unsafe
+            // sanitizer: null, // Ensure no custom sanitizer runs here unless intended
+            async: false     // Ensure synchronous parsing if needed, usually default
+        });
+         console.log("Worker: Marked options set.");
+    } else {
+        console.error("Worker: CRITICAL - importScripts succeeded but 'marked' is not defined or not a function/object!");
+        // Send error back - main thread needs to know the worker is broken
+        self.postMessage({ error: "Markdown library loaded but not functional." });
+    }
 } catch (e) {
-    console.error("Worker: Failed to load marked library from /static/js/marked.min.js.", e);
-    self.postMessage({ error: "Failed to load Markdown library." });
-    // Optional: Try a CDN as a fallback?
-    // try {
-    //    importScripts('https://cdn.jsdelivr.net/npm/marked/marked.min.js');
-    // } catch (cdnError) {
-    //    console.error("Worker: Failed to load marked library from CDN fallback.", cdnError);
-    //    self.postMessage({ error: "Failed to load Markdown library from fallback." });
-    // }
+    console.error(`Worker: CRITICAL - Failed to importScripts from ${libraryPath}. Error:`, e);
+    // Send error back to main thread
+    self.postMessage({ error: `Failed to load Markdown library: ${e.message}` });
+    // Note: The worker might terminate or be unusable after this point.
 }
 
-
 self.onmessage = (event) => {
-    // Check if 'marked' was loaded successfully
-    if (typeof marked === 'undefined') {
-        console.error("Worker: 'marked' library is not available.");
-        self.postMessage({ html: "<p>Error: Markdown library unavailable in worker.</p>", originalMarkdown: event.data });
+    // console.log("Worker: Received message from main thread:", event.data ? typeof event.data : 'null/undefined');
+
+    if (!markedLoaded) {
+        console.error("Worker: Received message, but 'marked' library failed to load. Cannot parse.");
+        // Send error back with the original markdown for potential fallback rendering
+        self.postMessage({
+            error: "Markdown library unavailable.",
+            html: `<p style="color: red;">[Markdown formatting unavailable]</p><pre><code>${escapeHtml(event.data)}</code></pre>`,
+            originalMarkdown: event.data
+        });
         return;
     }
 
     const markdown = event.data;
+    if (typeof markdown !== 'string') {
+         console.warn("Worker: Received non-string data. Ignoring.", markdown);
+         // Optionally send back an error or empty content
+         self.postMessage({ html: '', originalMarkdown: markdown });
+         return;
+    }
+
+    // console.log(`Worker: Parsing markdown (${markdown.length} chars)...`);
 
     try {
-        // Configure marked (optional, but recommended)
-        marked.setOptions({
-            gfm: true,       // Enable GitHub Flavored Markdown
-            breaks: true,    // Convert single line breaks to <br>
-            // Consider safety: Sanitize HTML on the MAIN thread after receiving it if needed.
-            // sanitize: false, // Disable marked's built-in basic sanitizer
-        });
-
+        // Parse the markdown using the globally configured 'marked' instance
         const html = marked.parse(markdown);
+        // console.log(`Worker: Parsing complete. Sending HTML (${html.length} chars) back.`);
 
-        // Send the parsed HTML back to the main thread.
+        // Send the parsed HTML (and original markdown for reference if needed)
         self.postMessage({ html: html, originalMarkdown: markdown });
 
     } catch (e) {
         console.error("Worker: Markdown parsing error:", e);
-        self.postMessage({ html: `<p>Error parsing Markdown content.</p><pre><code>${escapeHtml(markdown)}</code></pre>`, originalMarkdown: markdown });
+        // Send back an error message and the original markdown
+        self.postMessage({
+            error: `Parsing error: ${e.message}`,
+            html: `<p style="color: red;">[Error parsing Markdown]</p><pre><code>${escapeHtml(markdown)}</code></pre>`,
+            originalMarkdown: markdown
+        });
     }
 };
 
+// Utility function to escape HTML for displaying in error messages safely
 function escapeHtml(unsafe) {
-   // ... (keep the escapeHtml function from the previous example) ...
-    if (!unsafe) return '';
+    if (typeof unsafe !== 'string') return '';
     return unsafe
          .replace(/&/g, "&")
          .replace(/</g, "<")
@@ -59,5 +92,18 @@ function escapeHtml(unsafe) {
          .replace(/'/g, "'");
 }
 
+// Optional: Catch unhandled errors within the worker itself
+self.onerror = function(event) {
+    console.error("Worker: Uncaught internal error:", event.message, event);
+    // Attempt to notify the main thread about the unexpected failure
+    // This might not always work if the worker state is severely corrupted.
+    try {
+        self.postMessage({ error: `Worker internal error: ${event.message}` });
+    } catch (e) {
+        // *** FIX: Added closing parenthesis ')' ***
+        console.error("Worker: Failed to post internal error message back to main thread.", e);
+        // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+};
 
-console.log("Markdown Worker initialized.");
+console.log("Worker: Initial script execution finished. Waiting for messages.");
